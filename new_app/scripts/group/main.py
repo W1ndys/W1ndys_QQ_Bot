@@ -202,83 +202,57 @@ async def check_banned_words(websocket, group_id, msg):
     return False
 
 
-# 读取入群欢迎状态
-def load_welcome_status(group_id):
+# 读取入群欢迎状态数据
+def load_welcome_status_data(group_id):
     try:
         with open(
-            f"{os.path.dirname(os.path.abspath(__file__))}/welcome_status_{group_id}.json",
+            f"{os.path.dirname(os.path.abspath(__file__))}/welcome_status.json",
             "r",
             encoding="utf-8",
         ) as f:
-            return json.load(f).get("status", True)
+            return json.load(f).get(f"status_{group_id}", {})
     except FileNotFoundError:
-        return True  # 默认开启
+        return {}
+
+
+# 保存入群欢迎状态数据
+def save_welcome_status_data(group_id, status_data):
+    with open(
+        f"{os.path.dirname(os.path.abspath(__file__))}/welcome_status.json",
+        "w",
+        encoding="utf-8",
+    ) as f:
+        json.dump(status_data, f, ensure_ascii=False, indent=4)
 
 
 # 保存入群欢迎状态
 def save_welcome_status(group_id, status):
-    with open(
-        f"{os.path.dirname(os.path.abspath(__file__))}/welcome_status_{group_id}.json",
-        "w",
-        encoding="utf-8",
-    ) as f:
-        json.dump({"status": status}, f, ensure_ascii=False, indent=4)
-    # 同步设置退群欢送状态
-    save_farewell_status(group_id, status)
+    status_data = load_welcome_status_data(group_id)
+    status_data[group_id] = status
+    save_welcome_status_data(group_id, status_data)
 
 
 # 保存退群欢送状态
 def save_farewell_status(group_id, status):
-    with open(
-        f"{os.path.dirname(os.path.abspath(__file__))}/farewell_status_{group_id}.json",
-        "w",
-        encoding="utf-8",
-    ) as f:
-        json.dump({"status": status}, f, ensure_ascii=False, indent=4)
+    status_data = load_welcome_status_data(group_id)
+    status_data[group_id] = status
+    save_welcome_status_data(group_id, status_data)
+
+
+# 读取入群欢迎状态
+def load_welcome_status(group_id):
+    status_data = load_welcome_status_data(group_id)
+    return status_data.get(group_id, True)  # 默认开启
 
 
 # 读取退群欢送状态
 def load_farewell_status(group_id):
-    try:
-        with open(
-            f"{os.path.dirname(os.path.abspath(__file__))}/farewell_status_{group_id}.json",
-            "r",
-            encoding="utf-8",
-        ) as f:
-            return json.load(f).get("status", True)
-    except FileNotFoundError:
-        return True  # 默认开启
-
-
-# 读取邀请链状态
-def load_invite_chain_status(group_id):
-    try:
-        with open(
-            f"{os.path.dirname(os.path.abspath(__file__))}/invite_chain_status_{group_id}.json",
-            "r",
-            encoding="utf-8",
-        ) as f:
-            return json.load(f).get("status", True)
-    except FileNotFoundError:
-        return True  # 默认开启
-
-
-# 保存邀请链状态
-def save_invite_chain_status(group_id, status):
-    with open(
-        f"{os.path.dirname(os.path.abspath(__file__))}/invite_chain_status_{group_id}.json",
-        "w",
-        encoding="utf-8",
-    ) as f:
-        json.dump({"status": status}, f, ensure_ascii=False, indent=4)
+    status_data = load_welcome_status_data(group_id)
+    return status_data.get(group_id, True)  # 默认开启
 
 
 # 扫描邀请链
 async def view_invite_chain(websocket, group_id, target_user_id):
-    if not load_invite_chain_status(group_id):
-        await send_group_msg(websocket, group_id, "邀请链功能已关闭。")
-        return
-
     invite_chain = load_invite_chain(group_id)
     if not invite_chain:
         await send_group_msg(websocket, group_id, "没有找到邀请链。")
@@ -310,9 +284,6 @@ async def view_invite_chain(websocket, group_id, target_user_id):
 
 # 记录邀请链
 async def save_invite_chain(group_id, user_id, operator_id):
-    if not load_invite_chain_status(group_id):
-        return
-
     # 加载整个群的邀请链
     invite_chain = load_invite_chain(group_id)
 
@@ -397,7 +368,7 @@ async def handle_group_notice(websocket, msg):
         # 处理入群欢迎
         await handle_welcome_message(websocket, group_id, user_id)
         # 记录邀请链
-        if sub_type == "invite" and load_invite_chain_status(group_id):
+        if sub_type == "invite":
             await save_invite_chain(group_id, user_id, operator_id)
             await send_group_msg(
                 websocket,
@@ -531,15 +502,6 @@ async def handle_group_message(websocket, msg):
             elif raw_message == "disable_welcome_message":
                 save_welcome_status(group_id, False)
                 await send_group_msg(websocket, group_id, "已关闭入群欢迎和退群欢送。")
-
-        # 管理邀请链状态
-        if is_authorized:
-            if raw_message == "enable_invite_chain":
-                save_invite_chain_status(group_id, True)
-                await send_group_msg(websocket, group_id, "已开启邀请链功能。")
-            elif raw_message == "disable_invite_chain":
-                save_invite_chain_status(group_id, False)
-                await send_group_msg(websocket, group_id, "已关闭邀请链功能。")
 
         # 扫描邀请链
         if raw_message.startswith("view_invite_chain ") or raw_message.startswith(
